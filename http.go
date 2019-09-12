@@ -11,6 +11,7 @@ import (
 
 type HTTPProxy struct {
 	HTTPProxyConfig
+	exporter *Exporter
 }
 
 type HTTPProxyConfig struct {
@@ -19,9 +20,10 @@ type HTTPProxyConfig struct {
 	Verbose       bool
 }
 
-func NewHTTPProxy(c HTTPProxyConfig) *HTTPProxy {
+func NewHTTPProxy(c HTTPProxyConfig, e *Exporter) *HTTPProxy {
 	return &HTTPProxy{
 		HTTPProxyConfig: c,
+		exporter:        e,
 	}
 }
 
@@ -53,6 +55,8 @@ func (s HTTPProxy) Start() error {
 
 		// proxy to real target
 		proxy.ServeHTTP(w, req)
+
+		s.exporter.ProxyHttpTotal.With(s.exporter.Nodename).Inc()
 	})
 
 	log.Printf("info: Start listener on %s category='HTTP-Proxy'", s.ListenAddress)

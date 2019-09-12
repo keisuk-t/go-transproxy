@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/comail/colog"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	transproxy "github.com/wadahiro/go-transproxy"
 )
 
@@ -66,6 +69,10 @@ var (
 		"explicit-proxy-with-auth-listen", ":3133", "Explicit Proxy with auth listen address for HTTP/HTTPS, as `[host]:port` Note: This proxy uses authentication info of the `http_proxy` and `https_proxy` environment variables",
 	)
 
+	metricsListenAddress = fs.String(
+		"metrics-listen", ":3134", "hoge",
+	)
+
 	explicitProxyOnly = fs.Bool(
 		"explicit-proxy-only", false, "Boot Explicit Proxies only",
 	)
@@ -82,8 +89,8 @@ var (
 		"DNS-over-HTTPS endpoint URL",
 	)
 
-	dnsEnableTCP = fs.Bool("dns-tcp", true, "DNS Listen on TCP")
-	dnsEnableUDP = fs.Bool("dns-udp", true, "DNS Listen on UDP")
+	dnsEnableTCP    = fs.Bool("dns-tcp", true, "DNS Listen on TCP")
+	dnsEnableUDP    = fs.Bool("dns-udp", true, "DNS Listen on UDP")
 	disableIPTables = fs.Bool("disable-iptables", false, "Disable automatic iptables configuration")
 )
 
@@ -114,14 +121,26 @@ func main() {
 	colog.ParseFields(true)
 	colog.Register()
 
+	exporter, err := transproxy.NewExporter()
+	if err != nil {
+		panic(err)
+	}
+	prometheus.MustRegister(exporter)
+
+	log.Printf("info: Start listener on %s category='Prometheus-Exporter'", *metricsListenAddress)
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		http.ListenAndServe(*metricsListenAddress, nil)
+	}()
+
 	if *explicitProxyOnly {
-		startExplicitProxyOnly(level)
+		startExplicitProxyOnly(level, exporter)
 	} else {
-		startAllProxy(level)
+		startAllProxy(level, exporter)
 	}
 }
 
-func startExplicitProxyOnly(level colog.Level) {
+func startExplicitProxyOnly(level colog.Level, e *transproxy.Exporter) {
 	startExplicitProxy()
 
 	// serve until exit
@@ -133,7 +152,7 @@ func startExplicitProxyOnly(level colog.Level) {
 	log.Printf("info: go-transproxy exited.")
 }
 
-func startAllProxy(level colog.Level) {
+func startAllProxy(level colog.Level, exporter *transproxy.Exporter) {
 	// handling no_proxy environment
 	noProxy := os.Getenv("no_proxy")
 	if noProxy == "" {
@@ -173,6 +192,7 @@ func startAllProxy(level colog.Level) {
 			NoProxy:       np,
 			Verbose:       level == colog.LDebug,
 		},
+		exporter,
 	)
 	if err := httpProxy.Start(); err != nil {
 		log.Fatalf("alert: %s", err.Error())
@@ -183,6 +203,7 @@ func startAllProxy(level colog.Level) {
 			ListenAddress: *httpsProxyListenAddress,
 			NoProxy:       np,
 		},
+		exporter,
 	)
 	if err := httpsProxy.Start(); err != nil {
 		log.Fatalf("alert: %s", err.Error())

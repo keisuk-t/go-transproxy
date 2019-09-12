@@ -14,6 +14,7 @@ import (
 
 type HTTPSProxy struct {
 	HTTPSProxyConfig
+	exporter *Exporter
 }
 
 type HTTPSProxyConfig struct {
@@ -21,9 +22,10 @@ type HTTPSProxyConfig struct {
 	NoProxy       NoProxy
 }
 
-func NewHTTPSProxy(c HTTPSProxyConfig) *HTTPSProxy {
+func NewHTTPSProxy(c HTTPSProxyConfig, e *Exporter) *HTTPSProxy {
 	return &HTTPSProxy{
 		HTTPSProxyConfig: c,
+		exporter:         e,
 	}
 }
 
@@ -95,6 +97,8 @@ func (s HTTPSProxy) Start() error {
 
 			// Then, pipe the data
 			Pipe(tc, destConn)
+
+			s.exporter.ProxyHttpsTotal.With(s.exporter.Nodename).Inc()
 		})
 	}()
 
