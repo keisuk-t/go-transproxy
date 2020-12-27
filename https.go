@@ -31,6 +31,7 @@ func NewHTTPSProxy(c HTTPSProxyConfig, e *Exporter) *HTTPSProxy {
 
 func (s HTTPSProxy) Start() error {
 	dialer := &net.Dialer{
+		Timeout:   time.Minute * 5,
 		KeepAlive: 3 * time.Minute,
 		DualStack: true,
 	}
